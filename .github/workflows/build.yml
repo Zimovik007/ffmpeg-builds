@@ -30,6 +30,8 @@ jobs:
 
       - name: Configure
         working-directory: ffmpeg-src
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
           ./configure \
             --prefix="$PWD/out" \
@@ -42,13 +44,25 @@ jobs:
             --disable-manpages \
             --disable-podpages \
             --disable-txtpages \
-            --enable-pic
+            --enable-pic \
+            --extra-cflags="-mmacosx-version-min=13.0" \
+            --extra-ldflags="-mmacosx-version-min=13.0"
 
       - name: Build
         working-directory: ffmpeg-src
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
           make -j$(sysctl -n hw.ncpu)
           make install
+
+      - name: Verify deployment target
+        working-directory: ffmpeg-src
+        run: |
+          echo "=== ffmpeg load commands ==="
+          otool -l out/bin/ffmpeg | grep -A 3 LC_BUILD_VERSION || otool -l out/bin/ffmpeg | grep -A 3 LC_VERSION_MIN_MACOSX
+          echo "=== ffprobe load commands ==="
+          otool -l out/bin/ffprobe | grep -A 3 LC_BUILD_VERSION || otool -l out/bin/ffprobe | grep -A 3 LC_VERSION_MIN_MACOSX
 
       - name: Smoke check
         working-directory: ffmpeg-src
