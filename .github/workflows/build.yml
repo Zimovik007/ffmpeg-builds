@@ -1,0 +1,77 @@
+name: Build LGPL ffmpeg/ffprobe for macOS
+
+  on:
+    workflow_dispatch:
+      inputs:
+        ffmpeg_version:
+          description: "FFmpeg release tag (e.g. n7.1)"
+          required: true
+          default: "n7.1"
+
+  jobs:
+    build:
+      strategy:
+        fail-fast: false
+        matrix:
+          include:
+            - runner: macos-14
+              triple: aarch64-apple-darwin
+            - runner: macos-13
+              triple: x86_64-apple-darwin
+      runs-on: ${{ matrix.runner }}
+      steps:
+        - name: Install build deps
+          run: |
+            brew update
+            brew install nasm pkg-config lame opus libvpx libvorbis
+
+        - name: Clone FFmpeg ${{ inputs.ffmpeg_version }}
+          run: |
+            git clone --depth 1 -b ${{ inputs.ffmpeg_version }} \
+              https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+
+        - name: Configure (LGPL, no GPL codecs)
+          working-directory: ffmpeg-src
+          run: |
+            ./configure \
+              --prefix="$PWD/out" \
+              --enable-version3 \
+              --disable-gpl --disable-nonfree \
+              --disable-libx264 --disable-libx265 \
+              --disable-libxvid --disable-libfdk-aac \
+              --disable-libvidstab --disable-frei0r \
+              --enable-libmp3lame --enable-libopus \
+              --enable-libvorbis --enable-libvpx \
+              --pkg-config-flags=--static \
+              --disable-debug
+
+        - name: Build
+          working-directory: ffmpeg-src
+          run: |
+            make -j$(sysctl -n hw.ncpu)
+            make install
+            ls -lh out/bin/
+
+        - name: Smoke-check
+          working-directory: ffmpeg-src
+          run: |
+            out/bin/ffmpeg -version | head -2
+            out/bin/ffprobe -version | head -2
+            # подтверждение что GPL-кодеки выключены:
+            out/bin/ffmpeg -version | grep -i "enable-version3"
+            ! out/bin/ffmpeg -encoders 2>/dev/null | grep -i "libx264"
+
+        - name: Rename to Tauri target-triple convention
+          working-directory: ffmpeg-src/out/bin
+          run: |
+            mv ffmpeg  ffmpeg-${{ matrix.triple }}
+            mv ffprobe ffprobe-${{ matrix.triple }}
+
+        - name: Upload artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: ffmpeg-${{ matrix.triple }}
+            path: |
+              ffmpeg-src/out/bin/ffmpeg-${{ matrix.triple }}
+              ffmpeg-src/out/bin/ffprobe-${{ matrix.triple }}
+            retention-days: 30
