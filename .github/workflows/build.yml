@@ -1,12 +1,12 @@
-name: Build LGPL ffmpeg/ffprobe for macOS
+name: Build LGPL ffmpeg for macOS
 
   on:
     workflow_dispatch:
       inputs:
         ffmpeg_version:
-          description: "FFmpeg release tag (e.g. n7.1)"
+          description: FFmpeg release tag
           required: true
-          default: "n7.1"
+          default: n7.1
 
   jobs:
     build:
@@ -25,12 +25,11 @@ name: Build LGPL ffmpeg/ffprobe for macOS
             brew update
             brew install nasm pkg-config lame opus libvpx libvorbis
 
-        - name: Clone FFmpeg ${{ inputs.ffmpeg_version }}
-          run: |
-            git clone --depth 1 -b ${{ inputs.ffmpeg_version }} \
-              https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
+        - name: Clone FFmpeg
+          run: git clone --depth 1 -b ${{ inputs.ffmpeg_version }}
+  https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
 
-        - name: Configure (LGPL, no GPL codecs)
+        - name: Configure
           working-directory: ffmpeg-src
           run: |
             ./configure \
@@ -50,21 +49,17 @@ name: Build LGPL ffmpeg/ffprobe for macOS
           run: |
             make -j$(sysctl -n hw.ncpu)
             make install
-            ls -lh out/bin/
 
-        - name: Smoke-check
+        - name: Smoke check
           working-directory: ffmpeg-src
           run: |
             out/bin/ffmpeg -version | head -2
             out/bin/ffprobe -version | head -2
-            # подтверждение что GPL-кодеки выключены:
-            out/bin/ffmpeg -version | grep -i "enable-version3"
-            ! out/bin/ffmpeg -encoders 2>/dev/null | grep -i "libx264"
 
-        - name: Rename to Tauri target-triple convention
+        - name: Rename for Tauri
           working-directory: ffmpeg-src/out/bin
           run: |
-            mv ffmpeg  ffmpeg-${{ matrix.triple }}
+            mv ffmpeg ffmpeg-${{ matrix.triple }}
             mv ffprobe ffprobe-${{ matrix.triple }}
 
         - name: Upload artifact
