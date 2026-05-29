@@ -10,15 +10,15 @@ on:
 
 jobs:
   build:
+    runs-on: macos-14
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - arch: arm64
             triple: aarch64-apple-darwin
-          - runner: macos-13
+          - arch: x86_64
             triple: x86_64-apple-darwin
-    runs-on: ${{ matrix.runner }}
     steps:
       - name: Install build deps
         run: |
@@ -28,11 +28,16 @@ jobs:
       - name: Clone FFmpeg
         run: git clone --depth 1 -b ${{ inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git ffmpeg-src
 
-      - name: Configure
+      - name: Configure (${{ matrix.arch }})
         working-directory: ffmpeg-src
         env:
           MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            CROSS_FLAGS=""
+          else
+            CROSS_FLAGS="--enable-cross-compile --arch=x86_64 --target-os=darwin --cc=clang"
+          fi
           ./configure \
             --prefix="$PWD/out" \
             --enable-version3 \
@@ -45,8 +50,9 @@ jobs:
             --disable-podpages \
             --disable-txtpages \
             --enable-pic \
-            --extra-cflags="-mmacosx-version-min=13.0" \
-            --extra-ldflags="-mmacosx-version-min=13.0"
+            --extra-cflags="-arch ${{ matrix.arch }} -mmacosx-version-min=13.0" \
+            --extra-ldflags="-arch ${{ matrix.arch }} -mmacosx-version-min=13.0" \
+            $CROSS_FLAGS
 
       - name: Build
         working-directory: ffmpeg-src
@@ -56,19 +62,27 @@ jobs:
           make -j$(sysctl -n hw.ncpu)
           make install
 
-      - name: Verify deployment target
+      - name: Verify architecture and deployment target
         working-directory: ffmpeg-src
         run: |
-          echo "=== ffmpeg load commands ==="
+          echo "=== file info ==="
+          file out/bin/ffmpeg
+          file out/bin/ffprobe
+          echo "=== deployment target (ffmpeg) ==="
           otool -l out/bin/ffmpeg | grep -A 3 LC_BUILD_VERSION || otool -l out/bin/ffmpeg | grep -A 3 LC_VERSION_MIN_MACOSX
-          echo "=== ffprobe load commands ==="
+          echo "=== deployment target (ffprobe) ==="
           otool -l out/bin/ffprobe | grep -A 3 LC_BUILD_VERSION || otool -l out/bin/ffprobe | grep -A 3 LC_VERSION_MIN_MACOSX
 
       - name: Smoke check
         working-directory: ffmpeg-src
         run: |
-          out/bin/ffmpeg -version | head -2
-          out/bin/ffprobe -version | head -2
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            out/bin/ffmpeg -version | head -2
+            out/bin/ffprobe -version | head -2
+          else
+            arch -x86_64 out/bin/ffmpeg -version | head -2
+            arch -x86_64 out/bin/ffprobe -version | head -2
+          fi
 
       - name: Rename for Tauri
         working-directory: ffmpeg-src/out/bin
